@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/xml"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -83,15 +86,25 @@ func (rf *RSSFeed) worker() {
 	for {
 		var contents []byte
 		var f *Feed
+		var body io.Reader
+		var err error
 
 		log.Printf("Fetching URL: %s", rf.url)
-		res, err := http.Get(rf.url)
+		if strings.HasPrefix(rf.url, "file://") {
+			filePath := strings.TrimPrefix(rf.url, "file://")
+			body, err = os.Open(filePath)
+		} else {
+			var res *http.Response
+			res, err = http.Get(rf.url)
+			body = io.Reader(res.Body)
+		}
+
 		if err != nil {
 			log.Printf("Error getting url '%s': %s", rf.url, err)
 			goto refetch
 		}
 
-		contents, err = ioutil.ReadAll(res.Body)
+		contents, err = ioutil.ReadAll(body)
 		if err != nil {
 			log.Printf("Error reading page contents for '%s': %s", rf.url, err)
 			goto refetch
