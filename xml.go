@@ -81,44 +81,55 @@ func NewRSSFeed(url string, cache Cache) *RSSFeed {
 func (rf *RSSFeed) worker() {
 	firstrun := true
 	for {
+		var contents []byte
+		var f *Feed
+
 		log.Printf("Fetching URL: %s", rf.url)
 		res, err := http.Get(rf.url)
 		if err != nil {
 			log.Printf("Error getting url '%s': %s", rf.url, err)
-		} else {
-			contents, err := ioutil.ReadAll(res.Body)
-			if err != nil {
-				log.Printf("Error reading page contents for '%s': %s", rf.url, err)
-			} else {
-				if string(contents[:4]) == "<?xml" {
-					contents = bytes.SplitN(contents, []byte{'\n'}, 2)[1]
-				}
-				//log.Printf("RAW XML: %s: ENDXML", contents)
-				f := &Feed{}
-				err := xml.Unmarshal(contents, f)
-				if err != nil {
-					log.Printf("Error parsing XML for '%s': %s", rf.url, err)
-				} else {
-					//log.Printf("GOT XML: %s: XML", f.Channel)
-					for _, e := range f.Channel.Items {
-						id := e.Guid
-						if len(id) == 0 {
-							id = e.Title
-						}
-						log.Printf("Checking if cache has seen guid: %s", id)
-						if !rf.cache.Seen(id) {
-							log.Printf("ADDING GUID: %s", id)
-							rf.cache.Add(id)
-							if !firstrun {
-								rf.Rx <- e
-							}
-						}
-					}
-					firstrun = false
-				}
-			}
+			goto refetch
 		}
 
+		contents, err = ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Printf("Error reading page contents for '%s': %s", rf.url, err)
+			goto refetch
+		}
+
+		if string(contents[:4]) == "<?xml" {
+			contents = bytes.SplitN(contents, []byte{'\n'}, 2)[1]
+		}
+
+		//log.Printf("RAW XML: %s: ENDXML", contents)
+		f = &Feed{}
+		err = xml.Unmarshal(contents, f)
+		if err != nil {
+			log.Printf("Error parsing XML for '%s': %s", rf.url, err)
+			goto refetch
+		}
+
+		//log.Printf("GOT XML: %s: XML", f.Channel)
+		for _, e := range f.Channel.Items {
+			id := e.Guid
+			if len(id) == 0 {
+				id = e.Title
+			}
+
+			log.Printf("Checking if cache has seen guid: %s", id)
+			if rf.cache.Seen(id) {
+				continue
+			}
+
+			log.Printf("ADDING GUID: %s", id)
+			rf.cache.Add(id)
+			if !firstrun {
+				rf.Rx <- e
+			}
+		}
+		firstrun = false
+
+	refetch:
 		re := time.Minute * Conf.Refetch
 		select {
 		case <-time.After(re):
