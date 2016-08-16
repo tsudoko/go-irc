@@ -23,6 +23,10 @@ func main() {
 				feed := NewRSSFeed(f, NewRamCache())
 				for item := range feed.Rx {
 					time.Sleep(time.Second * time.Duration(len(Conf.Channels)))
+					item.Title = strings.Replace(item.Title, "\r", "", -1)
+					item.Title = strings.Replace(item.Title, "\n", "", -1)
+					item.Link = strings.Replace(item.Link, "\r", "", -1)
+					item.Link = strings.Replace(item.Link, "\n", "", -1)
 					i.Tx <- &irc.Line{
 						Command:   "PRIVMSG",
 						Arguments: []string{c},
